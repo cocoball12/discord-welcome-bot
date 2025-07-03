@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 
 # 봇 설정 - 음성 기능 비활성화
 intents = discord.Intents.default()
@@ -24,6 +25,8 @@ DORADORI_ROLE_NAME = "도라도라미"
 processing_members = set()
 # 최근 처리된 멤버 추적 (5분간 기록)
 recent_processed = {}
+# 48시간 후 확인 대기 중인 멤버들 (메모리 저장)
+pending_checks = {}
 
 @bot.event
 async def on_ready():
@@ -39,6 +42,103 @@ async def on_ready():
     # 처리 중인 멤버 목록 초기화
     processing_members.clear()
     recent_processed.clear()
+    
+    # 48시간 후 확인 작업 시작
+    bot.loop.create_task(check_adaptation_loop())
+
+async def check_adaptation_loop():
+    """48시간 후 적응 확인을 위한 백그라운드 작업"""
+    while True:
+        try:
+            current_time = datetime.now()
+            to_remove = []
+            
+            for key, check_data in pending_checks.items():
+                if current_time >= check_data['check_time']:
+                    guild_id, member_id = key.split('-')
+                    guild = bot.get_guild(int(guild_id))
+                    member = guild.get_member(int(member_id)) if guild else None
+                    
+                    if guild and member:
+                        await send_adaptation_check(guild, member, check_data['channel_id'])
+                    
+                    to_remove.append(key)
+            
+            # 처리된 항목들 제거
+            for key in to_remove:
+                del pending_checks[key]
+            
+        except Exception as e:
+            print(f"적응 확인 루프 오류: {e}")
+        
+        # 1시간마다 확인
+        await asyncio.sleep(3600)
+
+async def send_adaptation_check(guild, member, channel_id):
+    """48시간 후 적응 확인 메시지 전송"""
+    try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            return
+        
+        embed = discord.Embed(
+            title="🌟 서버 적응 안내",
+            description=f"{member.mention}님, 서버에 잘 적응하고 계신가요?",
+            color=0x00ff00,
+            timestamp=datetime.now()
+        )
+        
+        embed.add_field(
+            name="📋 적응 확인",
+            value="""서버 초기 목록 넣었으니 잘 따라해주셔서 감사합니다!
+이제 조금 넣었으니 있다면, 급할 안천에서 궁금한 것들이 있으시면 물어보세요!
+          
+이미 적응하셨다면 → [서버 버튼을 눌러 적응하면 → (주제 버튼을 눌러주세요]
+
+[정착하는 농도의 자유로운 임의 설정해주세요!
+[서버에 누구신 들으시 나중에 다시 들어온 방법하신 건]
+          
+🟢 완료하셨 → 무엇이자 안내 →  (완료도라미를 통해 증세로]
+          
+🟢 6일 내에 이후 응답이 없으면 자동으로 강퇴됩니다.
+도라도라미가 없싶어 적응을 완료하고!""",
+            inline=False
+        )
+        
+        # 버튼 생성
+        view = AdaptationView(member, channel)
+        await channel.send(embed=embed, view=view)
+        
+        print(f"{member.display_name}님에게 48시간 후 적응 확인 메시지를 보냈습니다.")
+        
+    except Exception as e:
+        print(f"적응 확인 메시지 전송 오류: {e}")
+
+class AdaptationView(discord.ui.View):
+    def __init__(self, member, channel):
+        super().__init__(timeout=518400)  # 6일 = 518400초
+        self.member = member
+        self.channel = channel
+    
+    @discord.ui.button(label='삭제', style=discord.ButtonStyle.red, emoji='🗑️')
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.member.id:
+            await interaction.response.send_message("❌ 채널이 삭제됩니다.", ephemeral=True)
+            await asyncio.sleep(2)
+            await self.channel.delete()
+        else:
+            await interaction.response.send_message("❌ 본인만 삭제할 수 있습니다.", ephemeral=True)
+    
+    @discord.ui.button(label='관리자 검토', style=discord.ButtonStyle.green, emoji='✅')
+    async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.member.id:
+            doradori_role = discord.utils.get(interaction.guild.roles, name=DORADORI_ROLE_NAME)
+            if doradori_role:
+                await interaction.response.send_message(f"✅ {doradori_role.mention} 관리자 검토를 요청했습니다!")
+            else:
+                await interaction.response.send_message("✅ 관리자 검토를 요청했습니다!")
+        else:
+            await interaction.response.send_message("❌ 본인만 관리자 검토를 요청할 수 있습니다.", ephemeral=True)
 
 @bot.event
 async def on_member_join(member):
@@ -158,38 +258,66 @@ async def on_member_join(member):
             print(f"채널 생성 실패: {e}")
             return
         
-        # 환영 메시지 전송
-        embed = discord.Embed(
-            title="🎉 새로운 멤버를 환영합니다!",
-            description=f"{member.mention}님, 서버에 오신 것을 환영합니다!",
+        # 첫 번째 환영 메시지 (이미지 1과 같은 내용)
+        initial_embed = discord.Embed(
+            title="🎉 도라도라미와 축하축하",
+            description=f"안녕하세요 저희 대화방 가족입니다! 48시간 내로 적응 설명 짧은 메시지를 도착 예정입니다.",
             color=0x00ff00,
             timestamp=datetime.now()
         )
         
-        embed.add_field(
-            name="👋 안내",
-            value=f"{doradori_role.mention} 역할을 가진 분들이 도움을 드릴 예정입니다.\n궁금한 것이 있으시면 언제든 물어보세요!",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📋 다음 단계",
-            value="• 서버 규칙을 확인해주세요\n• 자기소개를 해주세요\n• 궁금한 점을 자유롭게 질문하세요",
+        initial_embed.add_field(
+            name="📋 안내",
+            value="서버 규칙을 확인하시고 관리자 이용해주세요!",
             inline=False
         )
         
         if member.avatar:
-            embed.set_thumbnail(url=member.avatar.url)
+            initial_embed.set_thumbnail(url=member.avatar.url)
         
-        if guild.icon:
-            embed.set_footer(text="채널 생성됨", icon_url=guild.icon.url)
+        # 첫 번째 메시지의 버튼
+        class InitialView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=300)
+            
+            @discord.ui.button(label='삭제', style=discord.ButtonStyle.red, emoji='🗑️')
+            async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user.id == member.id:
+                    await interaction.response.send_message("❌ 채널이 삭제됩니다.", ephemeral=True)
+                    await asyncio.sleep(2)
+                    await welcome_channel.delete()
+                else:
+                    await interaction.response.send_message("❌ 본인만 삭제할 수 있습니다.", ephemeral=True)
+            
+            @discord.ui.button(label='관리자 검토', style=discord.ButtonStyle.green, emoji='✅')
+            async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user.id == member.id:
+                    await interaction.response.send_message(f"✅ {doradori_role.mention} 관리자 검토를 요청했습니다!")
+                else:
+                    await interaction.response.send_message("❌ 본인만 관리자 검토를 요청할 수 있습니다.", ephemeral=True)
         
-        await welcome_channel.send(embed=embed)
+        initial_view = InitialView()
+        await welcome_channel.send(embed=initial_embed, view=initial_view)
         
-        # 도라도라미들에게 알림 (역할로 태그)
-        await welcome_channel.send(f"{doradori_role.mention} 새로운 멤버 {member.mention}님을 도와주세요! 😊")
+        # 추가 안내 메시지
+        additional_info = """심심해서 들어와서 말 없이 나가는 건 상관없지만
+담는 한국인 웹진 간편하게 장난 쳐서 가져 그건 서
+개 받아내는 서버 이라구
+@도라도라미"""
+        
+        await welcome_channel.send(additional_info)
+        
+        # 48시간 후 적응 확인 스케줄 등록
+        check_time = current_time + timedelta(hours=48)
+        pending_checks[member_key] = {
+            'check_time': check_time,
+            'channel_id': welcome_channel.id,
+            'member_id': member.id,
+            'guild_id': guild.id
+        }
         
         print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
+        print(f"48시간 후 적응 확인 예정: {check_time}")
         
     except Exception as e:
         print(f"채널 생성 중 오류가 발생했습니다: {e}")
@@ -243,6 +371,13 @@ async def delete_welcome_channel(ctx, channel_id: int = None):
     else:
         await ctx.send("환영 채널만 삭제할 수 있습니다.")
 
+@bot.command(name='적응확인테스트')
+@commands.has_permissions(manage_channels=True)
+async def test_adaptation_check(ctx, member: discord.Member):
+    """48시간 적응 확인 메시지를 즉시 테스트하는 명령어"""
+    await send_adaptation_check(ctx.guild, member, ctx.channel.id)
+    await ctx.send(f"✅ {member.mention}님에 대한 적응 확인 메시지를 테스트로 전송했습니다.")
+
 @bot.command(name='도라도라미설정')
 @commands.has_permissions(administrator=True)
 async def set_doradori_role(ctx, role_name: str):
@@ -260,6 +395,7 @@ async def check_status(ctx):
     embed = discord.Embed(title="봇 상태 확인", color=0x0099ff)
     embed.add_field(name="서버", value=guild.name, inline=True)
     embed.add_field(name="총 멤버 수", value=len(guild.members), inline=True)
+    embed.add_field(name="대기 중인 적응 확인", value=len(pending_checks), inline=True)
     
     if doradori_role:
         doradori_count = len([m for m in doradori_role.members if not m.bot])
