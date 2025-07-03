@@ -212,11 +212,11 @@ async def on_member_join(member):
         # 비공개 채널 생성
         channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
         
-        # 채널 권한 설정
+        # 채널 권한 설정 - 완전한 비공개 채널
         overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            guild.default_role: discord.PermissionOverwrite(read_messages=False, send_messages=False),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            doradori_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),  # 도라도라미 역할 전체에게 권한 부여
+            doradori_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
         
@@ -224,6 +224,14 @@ async def on_member_join(member):
         for doradori_member in doradori_role.members:
             if not doradori_member.bot:  # 봇이 아닌 경우만
                 overwrites[doradori_member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        
+        # 다른 새로운 멤버들이 이 채널을 보지 못하도록 설정
+        # 현재 서버의 모든 멤버 중 도라도라미 역할이 없는 멤버들은 접근 불가
+        for guild_member in guild.members:
+            if (not guild_member.bot and 
+                guild_member.id != member.id and 
+                doradori_role not in guild_member.roles):
+                overwrites[guild_member] = discord.PermissionOverwrite(read_messages=False, send_messages=False)
         
         # 카테고리 찾기
         category = discord.utils.get(guild.categories, name="신입환영") 
@@ -258,7 +266,7 @@ async def on_member_join(member):
             print(f"채널 생성 실패: {e}")
             return
         
-        # 첫 번째 환영 메시지 (이미지 1과 같은 내용)
+        # 첫 번째 환영 메시지 (이미지와 같은 내용)
         initial_embed = discord.Embed(
             title="🎉 도라도라미와 축하축하",
             description=f"안녕하세요 저희 대화방 가족입니다! 48시간 내로 적응 설명 짧은 메시지를 도착 예정입니다.",
@@ -299,11 +307,11 @@ async def on_member_join(member):
         initial_view = InitialView()
         await welcome_channel.send(embed=initial_embed, view=initial_view)
         
-        # 추가 안내 메시지
-        additional_info = """심심해서 들어와서 말 없이 나가는 건 상관없지만
+        # 추가 안내 메시지 - 도라도라미 역할 멘션으로 수정
+        additional_info = f"""심심해서 들어와서 말 없이 나가는 건 상관없지만
 담는 한국인 웹진 간편하게 장난 쳐서 가져 그건 서
 개 받아내는 서버 이라구
-@도라도라미"""
+{doradori_role.mention}"""
         
         await welcome_channel.send(additional_info)
         
