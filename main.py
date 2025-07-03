@@ -19,6 +19,9 @@ bot = commands.Bot(
 TOKEN = os.getenv('DISCORD_TOKEN')
 DORADORI_ROLE_NAME = "도라도라미"
 
+# 처리 중인 멤버 추적 (중복 방지)
+processing_members = set()
+
 @bot.event
 async def on_ready():
     print(f'{bot.user}가 준비되었습니다!')
@@ -29,11 +32,27 @@ async def on_ready():
         activity=discord.Game(name="신입 환영하기"),
         status=discord.Status.online
     )
+    
+    # 처리 중인 멤버 목록 초기화
+    processing_members.clear()
 
 @bot.event
 async def on_member_join(member):
     """새로운 멤버가 서버에 입장했을 때 실행되는 함수"""
     guild = member.guild
+    
+    # 봇인 경우 무시
+    if member.bot:
+        return
+    
+    # 이미 처리 중인 멤버인지 확인
+    member_key = f"{guild.id}-{member.id}"
+    if member_key in processing_members:
+        print(f"{member.display_name}님은 이미 처리 중입니다.")
+        return
+    
+    # 처리 중 목록에 추가
+    processing_members.add(member_key)
     
     try:
         # 도라도라미 역할을 가진 멤버들 찾기
@@ -41,6 +60,15 @@ async def on_member_join(member):
         
         if not doradori_role:
             print(f"'{DORADORI_ROLE_NAME}' 역할을 찾을 수 없습니다.")
+            return
+        
+        # 비공개 채널 생성 전에 이미 존재하는 채널 확인
+        channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
+        
+        # 이미 같은 이름의 채널이 있는지 확인
+        existing_channel = discord.utils.get(guild.channels, name=channel_name)
+        if existing_channel:
+            print(f"이미 {channel_name} 채널이 존재합니다.")
             return
         
         # 도라도라미 역할을 가진 멤버들 중 온라인인 사람 찾기
@@ -68,16 +96,26 @@ async def on_member_join(member):
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
         
+        # 도라도라미 역할을 가진 각 멤버에게도 명시적으로 권한 부여
+        for doradori_member in doradori_role.members:
+            if not doradori_member.bot:  # 봇이 아닌 경우만
+                overwrites[doradori_member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        
         # 카테고리 찾기
         category = discord.utils.get(guild.categories, name="신입환영") 
         
-        # 채널 생성
-        welcome_channel = await guild.create_text_channel(
-            name=channel_name,
-            overwrites=overwrites,
-            category=category,
-            topic=f"{member.mention}님을 위한 환영 채널입니다."
-        )
+        # 채널 생성 시도 (실패 시 재시도하지 않음)
+        try:
+            welcome_channel = await guild.create_text_channel(
+                name=channel_name,
+                overwrites=overwrites,
+                category=category,
+                topic=f"{member.mention}님을 위한 환영 채널입니다."
+            )
+            print(f"채널 생성 성공: {welcome_channel.name}")
+        except discord.HTTPException as e:
+            print(f"채널 생성 실패: {e}")
+            return
         
         # 환영 메시지 전송
         embed = discord.Embed(
@@ -107,14 +145,16 @@ async def on_member_join(member):
         
         await welcome_channel.send(embed=embed)
         
-        # 도라도라미들에게 알림
-        doradori_mentions = " ".join([m.mention for m in online_doradori_members])
-        await welcome_channel.send(f"{doradori_mentions} 새로운 멤버 {member.mention}님을 도와주세요! 😊")
+        # 도라도라미들에게 알림 (역할로 태그)
+        await welcome_channel.send(f"{doradori_role.mention} 새로운 멤버 {member.mention}님을 도와주세요! 😊")
         
         print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
         
     except Exception as e:
         print(f"채널 생성 중 오류가 발생했습니다: {e}")
+    finally:
+        # 처리 완료 후 목록에서 제거
+        processing_members.discard(member_key)
 
 @bot.command(name='채널삭제')
 @commands.has_permissions(manage_channels=True)
