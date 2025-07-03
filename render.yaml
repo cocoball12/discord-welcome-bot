@@ -2,6 +2,7 @@ services:
   - type: web
     name: discord-welcome-bot
     env: python
+    runtime: python-3.12.8
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
