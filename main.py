@@ -404,6 +404,48 @@ async def check_status(ctx):
     await ctx.send(embed=embed)
 
 @bot.event
+async def on_member_remove(member):
+    """멤버가 서버에서 나갔을 때 해당 환영 채널 삭제"""
+    guild = member.guild
+    
+    # 봇인 경우 무시
+    if member.bot:
+        return
+    
+    try:
+        # 해당 멤버의 환영 채널 찾기
+        welcome_channels = [
+            ch for ch in guild.channels 
+            if ch.name.startswith(f"환영-{member.display_name}-")
+        ]
+        
+        # 환영 채널이 있으면 삭제
+        for channel in welcome_channels:
+            try:
+                await channel.delete()
+                print(f"{member.display_name}님이 나가서 환영 채널 '{channel.name}'을 삭제했습니다.")
+            except Exception as e:
+                print(f"환영 채널 삭제 중 오류: {e}")
+        
+        # 48시간 후 확인 대기 목록에서도 제거
+        member_key = f"{guild.id}-{member.id}"
+        if member_key in pending_checks:
+            del pending_checks[member_key]
+            print(f"{member.display_name}님의 48시간 후 확인 일정을 취소했습니다.")
+        
+        # 처리 중 목록에서도 제거
+        processing_members.discard(member_key)
+        
+        # 최근 처리 목록에서도 제거
+        if member_key in recent_processed:
+            del recent_processed[member_key]
+            
+    except Exception as e:
+        print(f"멤버 퇴장 처리 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
+
+@bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ 이 명령어를 사용할 권한이 없습니다.")
