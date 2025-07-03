@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import asyncio
 from datetime import datetime
 
 # 봇 설정 - 음성 기능 비활성화
@@ -21,6 +22,8 @@ DORADORI_ROLE_NAME = "도라도라미"
 
 # 처리 중인 멤버 추적 (중복 방지)
 processing_members = set()
+# 최근 처리된 멤버 추적 (5분간 기록)
+recent_processed = {}
 
 @bot.event
 async def on_ready():
@@ -35,11 +38,13 @@ async def on_ready():
     
     # 처리 중인 멤버 목록 초기화
     processing_members.clear()
+    recent_processed.clear()
 
 @bot.event
 async def on_member_join(member):
     """새로운 멤버가 서버에 입장했을 때 실행되는 함수"""
     guild = member.guild
+    current_time = datetime.now()
     
     # 봇인 경우 무시
     if member.bot:
@@ -51,8 +56,16 @@ async def on_member_join(member):
         print(f"{member.display_name}님은 이미 처리 중입니다.")
         return
     
+    # 최근 5분 내에 처리한 멤버인지 확인
+    if member_key in recent_processed:
+        time_diff = (current_time - recent_processed[member_key]).total_seconds()
+        if time_diff < 300:  # 5분 = 300초
+            print(f"{member.display_name}님은 최근에 이미 처리되었습니다.")
+            return
+    
     # 처리 중 목록에 추가
     processing_members.add(member_key)
+    recent_processed[member_key] = current_time
     
     try:
         # 도라도라미 역할을 가진 멤버들 찾기
@@ -66,9 +79,20 @@ async def on_member_join(member):
         channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
         
         # 이미 같은 이름의 채널이 있는지 확인
-        existing_channel = discord.utils.get(guild.channels, name=channel_name)
-        if existing_channel:
-            print(f"이미 {channel_name} 채널이 존재합니다.")
+        existing_channels = [ch for ch in guild.channels if ch.name == channel_name]
+        if existing_channels:
+            print(f"이미 {channel_name} 채널이 존재합니다: {len(existing_channels)}개")
+            # 기존 채널이 있으면 그 채널에 환영 메시지만 추가
+            existing_channel = existing_channels[0]
+            await existing_channel.send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
+            return
+        
+        # 같은 멤버를 위한 채널이 이미 있는지 확인 (날짜 상관없이)
+        member_channels = [ch for ch in guild.channels if ch.name.startswith(f"환영-{member.display_name}-")]
+        if member_channels:
+            print(f"{member.display_name}님을 위한 채널이 이미 존재합니다: {member_channels[0].name}")
+            # 기존 채널에 재입장 메시지 추가
+            await member_channels[0].send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
             return
         
         # 도라도라미 역할을 가진 멤버들 중 온라인인 사람 찾기
@@ -106,6 +130,12 @@ async def on_member_join(member):
         
         # 채널 생성 시도 (실패 시 재시도하지 않음)
         try:
+            # 채널 생성 직전에 한 번 더 확인
+            final_check = discord.utils.get(guild.channels, name=channel_name)
+            if final_check:
+                print(f"채널 생성 직전 확인: {channel_name} 채널이 이미 존재합니다.")
+                return
+                
             welcome_channel = await guild.create_text_channel(
                 name=channel_name,
                 overwrites=overwrites,
@@ -113,6 +143,17 @@ async def on_member_join(member):
                 topic=f"{member.mention}님을 위한 환영 채널입니다."
             )
             print(f"채널 생성 성공: {welcome_channel.name}")
+            
+            # 잠깐 대기 후 중복 채널 확인 및 제거
+            await asyncio.sleep(1)
+            duplicate_channels = [ch for ch in guild.channels if ch.name == channel_name and ch.id != welcome_channel.id]
+            for dup_ch in duplicate_channels:
+                print(f"중복 채널 감지, 삭제: {dup_ch.name}")
+                try:
+                    await dup_ch.delete()
+                except:
+                    pass
+                    
         except discord.HTTPException as e:
             print(f"채널 생성 실패: {e}")
             return
@@ -155,6 +196,36 @@ async def on_member_join(member):
     finally:
         # 처리 완료 후 목록에서 제거
         processing_members.discard(member_key)
+
+@bot.command(name='중복채널정리')
+@commands.has_permissions(manage_channels=True)
+async def cleanup_duplicate_channels(ctx):
+    """중복된 환영 채널을 정리하는 명령어"""
+    guild = ctx.guild
+    welcome_channels = [ch for ch in guild.channels if ch.name.startswith('환영-')]
+    
+    # 같은 이름의 채널들을 그룹화
+    channel_groups = {}
+    for channel in welcome_channels:
+        if channel.name in channel_groups:
+            channel_groups[channel.name].append(channel)
+        else:
+            channel_groups[channel.name] = [channel]
+    
+    deleted_count = 0
+    for name, channels in channel_groups.items():
+        if len(channels) > 1:
+            # 가장 오래된 채널 하나만 남기고 나머지 삭제
+            channels.sort(key=lambda x: x.created_at)
+            for channel in channels[1:]:  # 첫 번째를 제외하고 삭제
+                try:
+                    await channel.delete()
+                    deleted_count += 1
+                    print(f"중복 채널 삭제: {channel.name}")
+                except:
+                    pass
+    
+    await ctx.send(f"✅ 중복된 환영 채널 {deleted_count}개를 정리했습니다.")
 
 @bot.command(name='채널삭제')
 @commands.has_permissions(manage_channels=True)
