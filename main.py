@@ -4,12 +4,13 @@ import os
 import asyncio
 from datetime import datetime
 
-# 봇 설정
+# 봇 설정 - 음성 기능 비활성화
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+# 음성 관련 기능 비활성화
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # 환경 변수 설정 (Render에서 사용)
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -19,6 +20,12 @@ DORADORI_ROLE_NAME = "도라도라미"  # 역할 이름 (필요에 따라 수정
 async def on_ready():
     print(f'{bot.user}가 준비되었습니다!')
     print(f'봇이 {len(bot.guilds)}개의 서버에 연결되어 있습니다.')
+    
+    # 봇 상태 설정
+    await bot.change_presence(
+        activity=discord.Game(name="신입 환영하기"),
+        status=discord.Status.online
+    )
 
 @bot.event
 async def on_member_join(member):
