@@ -57,9 +57,6 @@ async def on_member_join(member):
             print("도라도라미 역할을 가진 멤버가 없습니다.")
             return
         
-        # 도라도라미 멤버 중 한 명 선택
-        doradori_member = online_doradori_members[0]
-        
         # 비공개 채널 생성
         channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
         
@@ -67,7 +64,7 @@ async def on_member_join(member):
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            doradori_member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            doradori_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),  # 도라도라미 역할 전체에게 권한 부여
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
         
@@ -92,7 +89,7 @@ async def on_member_join(member):
         
         embed.add_field(
             name="👋 안내",
-            value=f"{doradori_member.mention}님이 도움을 드릴 예정입니다.\n궁금한 것이 있으시면 언제든 물어보세요!",
+            value=f"{doradori_role.mention} 역할을 가진 분들이 도움을 드릴 예정입니다.\n궁금한 것이 있으시면 언제든 물어보세요!",
             inline=False
         )
         
@@ -110,8 +107,9 @@ async def on_member_join(member):
         
         await welcome_channel.send(embed=embed)
         
-        # 도라도라미에게 알림
-        await welcome_channel.send(f"{doradori_member.mention} 새로운 멤버 {member.mention}님을 도와주세요! 😊")
+        # 도라도라미들에게 알림
+        doradori_mentions = " ".join([m.mention for m in online_doradori_members])
+        await welcome_channel.send(f"{doradori_mentions} 새로운 멤버 {member.mention}님을 도와주세요! 😊")
         
         print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
         
