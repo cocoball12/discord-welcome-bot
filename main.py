@@ -3,12 +3,17 @@ from discord.ext import commands
 import os
 from datetime import datetime
 
-# 봇 설정
+# 봇 설정 - 음성 기능 비활성화
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+# 음성 기능을 사용하지 않도록 설정
+bot = commands.Bot(
+    command_prefix='!', 
+    intents=intents, 
+    help_command=None
+)
 
 # 환경 변수 설정
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -167,6 +172,10 @@ async def on_command_error(ctx, error):
 # 봇 실행
 if __name__ == "__main__":
     if TOKEN:
-        bot.run(TOKEN)
+        try:
+            bot.run(TOKEN)
+        except Exception as e:
+            print(f"봇 실행 중 오류 발생: {e}")
+            print("Python 3.13 호환성 문제일 수 있습니다. Python 3.11 또는 3.12 사용을 권장합니다.")
     else:
         print("DISCORD_TOKEN 환경 변수를 설정해주세요!")
