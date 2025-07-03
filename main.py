@@ -273,9 +273,9 @@ async def on_member_join(member):
         await welcome_channel.send(embed=initial_embed, view=initial_view)
         
         # 추가 안내 메시지
-        additional_info = f"""심심해서 들어와서 말 없이 나가는 건 상관없지만
-무분별한 도배나 장난은 삼가해 주세요.
-궁금한 것이 있으시면 언제든 물어보세요!
+        additional_info = f"""심심해서 들어온거면 관리진들이 불러줄떄 빨리 답장하고 부르면 음챗방 오셈
+답도 안하고 활동 안할거면 걍 딴 서버 가라
+그런 새끼 받아주는 서버 아님
 {doradori_role.mention}"""
         
         await welcome_channel.send(additional_info)
