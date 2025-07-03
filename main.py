@@ -212,26 +212,13 @@ async def on_member_join(member):
         # 비공개 채널 생성
         channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
         
-        # 채널 권한 설정 - 완전한 비공개 채널
+        # 채널 권한 설정 - 간단하고 확실한 비공개 채널
         overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False, send_messages=False),
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             doradori_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
-        
-        # 도라도라미 역할을 가진 각 멤버에게도 명시적으로 권한 부여
-        for doradori_member in doradori_role.members:
-            if not doradori_member.bot:  # 봇이 아닌 경우만
-                overwrites[doradori_member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        
-        # 다른 새로운 멤버들이 이 채널을 보지 못하도록 설정
-        # 현재 서버의 모든 멤버 중 도라도라미 역할이 없는 멤버들은 접근 불가
-        for guild_member in guild.members:
-            if (not guild_member.bot and 
-                guild_member.id != member.id and 
-                doradori_role not in guild_member.roles):
-                overwrites[guild_member] = discord.PermissionOverwrite(read_messages=False, send_messages=False)
         
         # 카테고리 찾기
         category = discord.utils.get(guild.categories, name="신입환영") 
@@ -379,12 +366,35 @@ async def delete_welcome_channel(ctx, channel_id: int = None):
     else:
         await ctx.send("환영 채널만 삭제할 수 있습니다.")
 
-@bot.command(name='적응확인테스트')
+@bot.command(name='테스트환영')
 @commands.has_permissions(manage_channels=True)
-async def test_adaptation_check(ctx, member: discord.Member):
-    """48시간 적응 확인 메시지를 즉시 테스트하는 명령어"""
-    await send_adaptation_check(ctx.guild, member, ctx.channel.id)
-    await ctx.send(f"✅ {member.mention}님에 대한 적응 확인 메시지를 테스트로 전송했습니다.")
+async def test_welcome(ctx, member: discord.Member):
+    """환영 채널 생성을 테스트하는 명령어"""
+    try:
+        # 수동으로 on_member_join 함수 호출
+        await on_member_join(member)
+        await ctx.send(f"✅ {member.mention}님에 대한 환영 채널 생성을 테스트했습니다.")
+    except Exception as e:
+        await ctx.send(f"❌ 테스트 중 오류 발생: {e}")
+
+@bot.command(name='권한확인')
+@commands.has_permissions(manage_channels=True)
+async def check_permissions(ctx):
+    """봇의 권한을 확인하는 명령어"""
+    guild = ctx.guild
+    bot_member = guild.get_member(bot.user.id)
+    doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
+    category = discord.utils.get(guild.categories, name="신입환영")
+    
+    embed = discord.Embed(title="권한 및 설정 확인", color=0x0099ff)
+    embed.add_field(name="봇 권한", value=f"채널 관리: {bot_member.guild_permissions.manage_channels}", inline=True)
+    embed.add_field(name="도라도라미 역할", value=f"존재: {doradori_role is not None}", inline=True)
+    embed.add_field(name="신입환영 카테고리", value=f"존재: {category is not None}", inline=True)
+    
+    if doradori_role:
+        embed.add_field(name="도라도라미 멤버 수", value=len(doradori_role.members), inline=True)
+    
+    await ctx.send(embed=embed)
 
 @bot.command(name='도라도라미설정')
 @commands.has_permissions(administrator=True)
