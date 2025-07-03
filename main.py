@@ -1,20 +1,18 @@
 import discord
 from discord.ext import commands
 import os
-import asyncio
 from datetime import datetime
 
-# 봇 설정 - 음성 기능 비활성화
+# 봇 설정
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-# 음성 관련 기능 비활성화
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# 환경 변수 설정 (Render에서 사용)
+# 환경 변수 설정
 TOKEN = os.getenv('DISCORD_TOKEN')
-DORADORI_ROLE_NAME = "도라도라미"  # 역할 이름 (필요에 따라 수정)
+DORADORI_ROLE_NAME = "도라도라미"
 
 @bot.event
 async def on_ready():
@@ -54,7 +52,7 @@ async def on_member_join(member):
             print("도라도라미 역할을 가진 멤버가 없습니다.")
             return
         
-        # 도라도라미 멤버 중 한 명 선택 (첫 번째 온라인 멤버)
+        # 도라도라미 멤버 중 한 명 선택
         doradori_member = online_doradori_members[0]
         
         # 비공개 채널 생성
@@ -68,7 +66,7 @@ async def on_member_join(member):
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
         
-        # 카테고리 찾기 (있다면)
+        # 카테고리 찾기
         category = discord.utils.get(guild.categories, name="신입환영") 
         
         # 채널 생성
@@ -99,8 +97,11 @@ async def on_member_join(member):
             inline=False
         )
         
-        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-        embed.set_footer(text=f"채널 생성됨", icon_url=guild.icon.url if guild.icon else None)
+        if member.avatar:
+            embed.set_thumbnail(url=member.avatar.url)
+        
+        if guild.icon:
+            embed.set_footer(text="채널 생성됨", icon_url=guild.icon.url)
         
         await welcome_channel.send(embed=embed)
         
@@ -115,7 +116,7 @@ async def on_member_join(member):
 @bot.command(name='채널삭제')
 @commands.has_permissions(manage_channels=True)
 async def delete_welcome_channel(ctx, channel_id: int = None):
-    """환영 채널을 삭제하는 명령어 (관리자 전용)"""
+    """환영 채널을 삭제하는 명령어"""
     if channel_id:
         channel = bot.get_channel(channel_id)
     else:
@@ -131,7 +132,7 @@ async def delete_welcome_channel(ctx, channel_id: int = None):
 @bot.command(name='도라도라미설정')
 @commands.has_permissions(administrator=True)
 async def set_doradori_role(ctx, role_name: str):
-    """도라도라미 역할 이름을 설정하는 명령어 (관리자 전용)"""
+    """도라도라미 역할 이름을 설정하는 명령어"""
     global DORADORI_ROLE_NAME
     DORADORI_ROLE_NAME = role_name
     await ctx.send(f"도라도라미 역할이 '{role_name}'으로 설정되었습니다.")
@@ -154,17 +155,16 @@ async def check_status(ctx):
     
     await ctx.send(embed=embed)
 
-# 오류 처리
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ 이 명령어를 사용할 권한이 없습니다.")
     elif isinstance(error, commands.CommandNotFound):
-        pass  # 존재하지 않는 명령어는 무시
+        pass
     else:
         print(f"오류 발생: {error}")
 
-# Render에서 봇 실행
+# 봇 실행
 if __name__ == "__main__":
     if TOKEN:
         bot.run(TOKEN)
