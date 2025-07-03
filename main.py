@@ -192,6 +192,9 @@ async def on_member_join(member):
     processing_members.add(member_key)
     recent_processed[member_key] = current_time
     
+    # 잠시 대기 (동시 처리 방지)
+    await asyncio.sleep(0.5)
+    
     try:
         # 도라도라미 역할을 가진 멤버들 찾기
         doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
@@ -204,11 +207,27 @@ async def on_member_join(member):
         # 비공개 채널 생성 전에 이미 존재하는 채널 확인
         channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
         
-        # 같은 멤버를 위한 채널이 이미 있는지 확인
-        existing_channels = [ch for ch in guild.channels if ch.name.startswith(f"환영-{member.display_name}-")]
+        # 같은 멤버를 위한 채널이 이미 있는지 확인 (더 강력한 체크)
+        existing_channels = []
+        for ch in guild.channels:
+            if (ch.name.startswith(f"환영-{member.display_name}-") or 
+                ch.name == f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"):
+                existing_channels.append(ch)
+        
         if existing_channels:
             print(f"{member.display_name}님을 위한 채널이 이미 존재합니다: {existing_channels[0].name}")
             await existing_channels[0].send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
+            processing_members.discard(member_key)
+            return
+        
+        # 최종 채널 이름 확정
+        channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
+        
+        # 채널 생성 직전 한 번 더 확인
+        final_check = discord.utils.get(guild.channels, name=channel_name)
+        if final_check:
+            print(f"최종 확인: {channel_name} 채널이 이미 존재합니다.")
+            await final_check.send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
             processing_members.discard(member_key)
             return
         
@@ -246,9 +265,28 @@ async def on_member_join(member):
                 topic=f"{member.mention}님을 위한 환영 채널입니다."
             )
             print(f"채널 생성 성공: {welcome_channel.name}")
+            
+            # 채널 생성 직후 중복 확인 및 제거
+            await asyncio.sleep(1)
+            all_channels = await guild.fetch_channels()
+            duplicate_channels = [ch for ch in all_channels if ch.name == channel_name and ch.id != welcome_channel.id]
+            
+            if duplicate_channels:
+                print(f"중복 채널 {len(duplicate_channels)}개 감지, 삭제 진행...")
+                for dup_ch in duplicate_channels:
+                    try:
+                        await dup_ch.delete()
+                        print(f"중복 채널 삭제 완료: {dup_ch.name}")
+                    except Exception as e:
+                        print(f"중복 채널 삭제 실패: {e}")
                     
         except discord.HTTPException as e:
             print(f"채널 생성 실패: {e}")
+            # 채널 생성 실패 시 같은 이름의 채널이 이미 있는지 확인
+            existing = discord.utils.get(guild.channels, name=channel_name)
+            if existing:
+                print(f"생성 실패했지만 채널이 이미 존재: {existing.name}")
+                await existing.send(f"🔄 {member.mention}님이 서버에 입장하셨습니다!")
             processing_members.discard(member_key)
             return
         
